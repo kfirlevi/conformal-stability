@@ -21,7 +21,7 @@ b_values = np.array([0, 10, 20, 60, 150, 300, 500, 1000])
 # training data
 num_samples = 100000
 X_train = np.zeros((num_samples, len(b_values)))
-X_calib = np.zeros((num_samples // 4, len(b_values)))
+X_calib = np.zeros((num_samples // 100, len(b_values)))
 
 Dp_train = np.random.uniform(0.01, 0.1, size=(len(X_train), 1))
 Dt_train = np.random.uniform(0.0005, 0.002, size=(len(X_train), 1))
@@ -72,7 +72,7 @@ net = Net(b_values_no0)
 
 # Loss function and optimizer
 criterion = nn.MSELoss()
-optimizer = optim.Adam(net.parameters(), lr=0.001)
+optimizer = optim.Adam(net.parameters(), lr=0.0001)
 
 batch_size = 128
 num_batches = len(X_train) // batch_size
@@ -85,8 +85,8 @@ trainloader = utils.DataLoader(torch.from_numpy(X_train.astype(np.float32)),
 
 # Best loss
 best = 1e16
-patience = 2
-num_epochs = 100
+patience = 10
+num_epochs = 200
 
 # Train
 num_bad_epochs = 0
@@ -146,6 +146,14 @@ net.eval()
 with torch.no_grad():
     S_calib_pred, Dp_calib_pred, Dt_calib_pred, Fp_calib_pred = net(torch.from_numpy(X_calib.astype(np.float32)))
 
+Dp_calib_pred = Dp_calib_pred.numpy()
+Dt_calib_pred = Dt_calib_pred.numpy()
+Fp_calib_pred = Fp_calib_pred.numpy()
+
+if np.mean(Dp_calib_pred) < np.mean(Dt_calib_pred):
+    Dp_calib_pred, Dt_calib_pred = Dt_calib_pred, Dp_calib_pred
+    Fp_calib_pred = 1 - Fp_calib_pred
+
 Dp_scores = np.sort(np.abs(Dp_calib_pred - Dp_calib), axis=None)
 Dt_scores = np.sort(np.abs(Dt_calib_pred - Dt_calib), axis=None)
 Fp_scores = np.sort(np.abs(Fp_calib_pred - Fp_calib), axis=None)
@@ -153,7 +161,7 @@ Fp_scores = np.sort(np.abs(Fp_calib_pred - Fp_calib), axis=None)
 ###################################################################
 # 2 extract the 1-alpha quantile fron the non-conformity scores   #
 ###################################################################
-alpha = 0.05
+alpha = 0.15
 k = int(np.ceil((len(X_calib) + 1) * (1 - alpha)))
 Dp_quantile = Dp_scores[k]
 Dt_quantile = Dt_scores[k]
@@ -164,22 +172,25 @@ x = np.linspace(0, len(X_calib), len(X_calib))
 figure, axis = plt.subplots(3, 2)
 axis[0, 0].set_title('Dp Estimation with coverage:')
 axis[0, 0].plot(x, Dp_calib, '-.')
-axis[0, 0].plot(x, np.add(Dp_calib, Dp_quantile), '-o', color='red')
-axis[0, 0].plot(x, np.add(Dp_calib, -Dp_quantile), '-o', color='red')
+axis[0, 0].plot(x, Dp_calib_pred, '-.', color='red')
+axis[0, 0].plot(x, np.add(Dp_calib, Dp_quantile), '-o', color='black')
+axis[0, 0].plot(x, np.add(Dp_calib, -Dp_quantile), '-o', color='black')
 axis[1, 0].set_title('Dt Estimation with coverage:')
 axis[1, 0].plot(x, Dt_calib, '-.')
-axis[1, 0].plot(x, np.add(Dt_calib, Dt_quantile), '-o', color='red')
-axis[1, 0].plot(x, np.add(Dt_calib, -Dt_quantile), '-o', color='red')
+axis[1, 0].plot(x, Dt_calib_pred, '-.', color='red')
+axis[1, 0].plot(x, np.add(Dt_calib, Dt_quantile), '-o', color='black')
+axis[1, 0].plot(x, np.add(Dt_calib, -Dt_quantile), '-o', color='black')
 axis[2, 0].set_title('Fp Estimation with coverage:')
 axis[2, 0].plot(x, Fp_calib, '-.')
-axis[2, 0].plot(x, np.add(Fp_calib, Fp_quantile), '-o', color='red')
-axis[2, 0].plot(x, np.add(Fp_calib, -Fp_quantile), '-o', color='red')
-axis[0, 1].set_title('Dp Coverage size Box plot')
-axis[0, 1].boxplot(Dp_scores, whis=[25, 95])
-axis[1, 1].set_title('Dt Coverage size Box plot')
-axis[1, 1].boxplot(Dt_scores, whis=[25, 95])
-axis[2, 1].set_title('Fp Coverage size Box plot')
-axis[2, 1].boxplot(Fp_scores, whis=[25, 95])
+axis[2, 0].plot(x, Fp_calib_pred, '-.', color='red')
+axis[2, 0].plot(x, np.add(Fp_calib, Fp_quantile), '-o', color='black')
+axis[2, 0].plot(x, np.add(Fp_calib, -Fp_quantile), '-o', color='black')
+axis[0, 1].set_title(f'Dp Coverage size Box plot\ntop whisker is at 1 - $alpha$ = {1-alpha} signifance level')
+axis[0, 1].boxplot(Dp_scores, whis=[25, 100 * (1 - alpha)])
+axis[1, 1].set_title(f'Dt Coverage size Box plot\ntop whisker is at 1 - $alpha$ = {1-alpha} signifance level')
+axis[1, 1].boxplot(Dt_scores, whis=[25, 100 * (1 - alpha)])
+axis[2, 1].set_title(f'Fp Coverage size Box plot\ntop whisker is at 1 - $alpha$ = {1-alpha} signifance level')
+axis[2, 1].boxplot(Fp_scores, whis=[25, 100 * (1 - alpha)])
 plt.show()
 
 #
