@@ -18,7 +18,7 @@ def RMSE(a, b):
     return RMSE
 def binomial_prob(B, N, delta):
     return ss.binom(N, B) * (delta ** B) * ((1-delta) ** (N-B))
-def getQunatile(net, calibration_dataset, alpha):
+def get_qunatile(net, calibration_dataset, alpha):
     net.eval()
     with torch.no_grad():
         S_calib_pred, Dp_calib_pred, Dt_calib_pred, Fp_calib_pred = net(torch.from_numpy(calibration_dataset.astype(np.float32)))
@@ -31,7 +31,7 @@ def getQunatile(net, calibration_dataset, alpha):
     # 2 extract the 1-alpha quantile from the non-conformity scores   #
     ###################################################################
     # alpha = 0.05
-    k = int(np.ceil((len(X_calib) + 1) * (1 - alpha)))
+    k = int(np.ceil((len(calibration_dataset) + 1) * (1 - alpha)))
     Fp_quantile = Fp_scores[k]
     Dp_quantile = Dp_scores[k]
     Dt_quantile = Dt_scores[k]
@@ -44,7 +44,7 @@ b_values = np.array([0, 10, 20, 60, 150, 300, 500, 1000])
 b_values_no0 = torch.FloatTensor(b_values[1:])
 
 # training data
-num_samples = 2000000
+num_samples = 500000  # 1000000  # 2000000
 X_train = np.zeros((num_samples, len(b_values)))
 Dp_train = np.random.uniform(0.01, 0.1, size=(num_samples, ))
 Dt_train = np.random.uniform(0.0005, 0.002, size=(num_samples, ))
@@ -57,7 +57,7 @@ X_train_imag = np.random.normal(scale=0.01, size=(num_samples, len(b_values)))
 X_train = np.sqrt(X_train_real**2 + X_train_imag**2)
 
 # calibration data
-num_samples_calib = 25000
+num_samples_calib = 4000
 X_calib = np.zeros((num_samples_calib, len(b_values)))
 Dp_calib = np.random.uniform(0.01, 0.1, size=(num_samples_calib, ))
 Dt_calib = np.random.uniform(0.0005, 0.002, size=(num_samples_calib, ))
@@ -112,7 +112,7 @@ Dt_vector = np.zeros((1, 1000))
 Fp_vector = np.zeros((1, 1000))
 
 # stability test hyperparameters initialization
-n = 100000  # 200000
+n = 50000  # 100000  # 200000
 kappa = int(np.floor(num_samples / n))
 X_train_partitioned = np.zeros(shape=(kappa, n, X_train.shape[1]))
 X_train_partitioned_n_minus_1 = np.zeros(shape=(kappa, n - 1, X_train.shape[1]))
@@ -154,7 +154,7 @@ for k in range(kappa):
         best_loss = 1e16
         num_bad_epochs = 0
         net = net_stability[k, index]
-        optimizer = optim.Adam(net.parameters(), lr=0.0001)  # 0.0001
+        optimizer = optim.Adam(net.parameters(), lr=0.001)  # 0.0001
         for epoch in range(1000):
             print("-----------------------------------------------------------------")
             print("Epoch: {}; Bad epochs: {}".format(epoch, num_bad_epochs))
@@ -214,7 +214,7 @@ for k in range(kappa):
 
         stability_sample_pred[index, :] = [Dp, Dt, Fp]
 
-        # quantile_stability[k, index] = getQunatile(net, X_calib, alpha=0.05)
+        # quantile_stability[k, index] = get_qunatile(net, X_calib, alpha=0.05)
         # @TODO: add qunatile calculations and save to an array
 
     iteration_delta[k, :] = np.abs(stability_sample_pred[0, :] - stability_sample_pred[1, :])
@@ -224,18 +224,23 @@ for k in range(kappa):
     print('iteration ' + str(k) + ', prediction for n-1 samples: ' + str(stability_sample_pred[1, :]))
     print('iteration ' + str(k) + ', abs delta: ' + str(iteration_delta[k, :]))
 
-# Binomial test for stability
-epsilon_values_to_test = np.logspace(-5, 0, 6)
-lambda_values_to_test = np.linspace(0.1, 0.5, 5)  # np.linspace(0.05, 0.5, 10)
-
-B_scanned = np.zeros((len(epsilon_values_to_test), 3), dtype=int)
-binomial_stats = np.zeros((len(epsilon_values_to_test), len(lambda_values_to_test), 3), dtype=float)
-T_hat = np.zeros((len(epsilon_values_to_test), len(lambda_values_to_test), 3), dtype=bool)
-
-for e_index, eps in enumerate(epsilon_values_to_test):
-    delta_compare_eps = iteration_delta > np.repeat(eps, 3)
-    B_scanned[e_index, :] = np.sum(delta_compare_eps, axis=0)
-    for l_index, l in enumerate(lambda_values_to_test):
-        binomial_stats[e_index, l_index, :] = binomial_prob(B_scanned[e_index, :], kappa, l)
-
-T_hat = binomial_stats < 0.1
+# Quantile calculation
+# for k in range(kappa):
+#     for index, net in enumerate(net_stability[k, :]):
+#         quantile_stability[k, index, :] = get_qunatile(net=net, calibration_dataset=X_calib, alpha=0.05)
+#
+# # Binomial test for stability
+# epsilon_values_to_test = np.logspace(-5, 0, 6)
+# lambda_values_to_test = np.linspace(0.1, 0.5, 5)  # np.linspace(0.05, 0.5, 10)
+#
+# B_scanned = np.zeros((len(epsilon_values_to_test), 3), dtype=int)
+# binomial_stats = np.zeros((len(epsilon_values_to_test), len(lambda_values_to_test), 3), dtype=float)
+# T_hat = np.zeros((len(epsilon_values_to_test), len(lambda_values_to_test), 3), dtype=bool)
+#
+# for e_index, eps in enumerate(epsilon_values_to_test):
+#     delta_compare_eps = iteration_delta > np.repeat(eps, 3)
+#     B_scanned[e_index, :] = np.sum(delta_compare_eps, axis=0)
+#     for l_index, l in enumerate(lambda_values_to_test):
+#         binomial_stats[e_index, l_index, :] = binomial_prob(B_scanned[e_index, :], kappa, l)
+#
+# T_hat = binomial_stats < 0.1
